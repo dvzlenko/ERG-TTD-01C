@@ -2,4 +2,7 @@
 *.bin
 *.elf
 *.bkp
+*.swp
+.gitattributes
+.gitignore
 tags
