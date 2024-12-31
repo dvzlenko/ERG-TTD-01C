@@ -141,10 +141,11 @@ typedef struct {
 void Blink_Toggle();
 void vAlarmTask(void *vpars);
 
+int         DetermineGain(int CHAN);
 int         MakePreciseMeasurement(int CHAN, int GAIN, int NUM, uint8_t FREQ, uint32_t VREF);
+void        MakeMeasurement(void);
 
 void        vBlinkTask(void *vpars);
-void        MakeMeasurement(void);
 void        SetFreqLow(void);
 void        SetFreqHigh(void);
 void        MY_GPIO_Init(void);

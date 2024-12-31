@@ -327,6 +327,43 @@ void Set_DAC_Output(uint8_t mode, uint16_t value) {
 /*                                       */
 /*+++++++++++++++++++++++++++++++++++++++*/
 
+/* Determning the correct GAIN of the AD7799 ADC 
+   It works in bipolar mode!!! */
+int DetermineGain(int CHAN) {
+    float coef;
+    uint32_t COUNT;
+
+    // getting a test count from ADC
+    MY_SPI_Init(1);
+    ADC_Reset();
+    ADC_SetConfig(ADC_CR_BM | ADC_CR_Gain1 | ADC_CR_RD | ADC_CR_BUF | CHAN);
+    COUNT = ADC_ReadDataSingle(ADC_MR_FS_50);
+    MY_SPI_DeInit();
+
+    // GAIN128 does not allow Internal Full-Scale Calibration in AD7799
+    // so, it was deprecated throughout the projet
+    if (COUNT == 8388608)
+        return ADC_CR_Gain64;
+    else {
+        coef = COUNT;
+        coef = 8388608 / abs(coef - 8388608);
+        if (coef > 128)
+            return ADC_CR_Gain64;
+        else if (coef > 64)
+            return ADC_CR_Gain32;
+        else if (coef > 32)
+            return ADC_CR_Gain16;
+        else if (coef > 16)
+            return ADC_CR_Gain8;
+        else if (coef > 8)
+            return ADC_CR_Gain4;
+        else if (coef > 4)
+            return ADC_CR_Gain2;
+        else
+            return ADC_CR_Gain1;
+        }
+    }
+
 /* Make PRECISE measurement in BIPOLAR MODE 
    - CNAN -> ADC channel
    - GAIN -> ADC GAIN
