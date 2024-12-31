@@ -18,8 +18,8 @@ void ReadDevInfo(void) {
         *dest_addr = *(__IO uint32_t*)source_addr;
         source_addr++;
         dest_addr++;
+        }
     }
-}
 
 /* writes Device Info to the MCU FLASH */ 
 void WriteDevInfo(void) {
@@ -32,9 +32,9 @@ void WriteDevInfo(void) {
         FLASH_ProgramWord((uint32_t)dest_addr, *source_addr);
         source_addr++;
         dest_addr++;
-    }
+        }
     FLASH_Lock();
-}
+    }
 
 /* reads ProgrammSettings from 1 kByte page of the MCU FLASH */ 
 void ReadProgramSettings(void) {
@@ -45,8 +45,8 @@ void ReadProgramSettings(void) {
         *dest_addr = *(__IO uint32_t*)source_addr;
         source_addr++;
         dest_addr++;
+        }
     }
-}
 
 /* writes ProgrammSettings in one 1 kByte page of the MCU FLASH */ 
 void WriteProgramSettings(void) {
@@ -59,9 +59,9 @@ void WriteProgramSettings(void) {
         FLASH_ProgramWord((uint32_t)dest_addr, *source_addr);
         source_addr++;
         dest_addr++;
-    }
+        }
     FLASH_Lock();
-}
+    }
 
 /* reads TimeSettings from 1 kByte page of the MCU FLASH */ 
 void ReadTimeSettings(void) {
@@ -72,8 +72,8 @@ void ReadTimeSettings(void) {
         *dest_addr = *(__IO uint32_t*)source_addr;
         source_addr++;
         dest_addr++;
+        }
     }
-}
 
 /* writes Time Settings in one 1 kByte page of the MCU FLASH */ 
 void WriteTimeSettings(void) {
@@ -86,9 +86,9 @@ void WriteTimeSettings(void) {
         FLASH_ProgramWord((uint32_t)dest_addr, *source_addr);
         source_addr++;
         dest_addr++;
-    }
+        }
     FLASH_Lock();
-}
+    }
 
 /* reads the current address in the FLASH from the BPR of STM */ 
 uint32_t GetAddress(void) {
@@ -96,13 +96,13 @@ uint32_t GetAddress(void) {
     tmp1 = BKP_ReadBackupRegister(BKP_DR1);
     tmp2 = BKP_ReadBackupRegister(BKP_DR2);
     return ((tmp1 << 16) | tmp2);
-}
+    }
 
 /* saves the current address in the FLASH to the BPR of STM */ 
 void SaveAddress(uint32_t addr) {
     BKP_WriteBackupRegister(BKP_DR1, addr >> 16);
     BKP_WriteBackupRegister(BKP_DR2, addr);
-}
+    }
 
 /* reads the correction number for the effective data points made since the schedule start time
    it is necessary as the start time can be placed in the past and the programm needs to calculate 
@@ -112,25 +112,32 @@ uint32_t GetNumberCorrection(void) {
     tmp1 = BKP_ReadBackupRegister(BKP_DR5);
     tmp2 = BKP_ReadBackupRegister(BKP_DR6);
     return ((tmp1 << 16) | tmp2);
-}
+    }
 
 /* saves the correction number */ 
 void SaveNumberCorrection(uint32_t num) {
     BKP_WriteBackupRegister(BKP_DR5, num >> 16);
     BKP_WriteBackupRegister(BKP_DR6, num);
-}
+    }
 
-/* reads the BLINK constant
+/* reads and writes the BLINK constant
    1 - means 1/4 sec and 0 - means 1/10 sec */
 uint16_t GetBlinkMode(void) {
     return BKP_ReadBackupRegister(BKP_DR9);
-}
+    }
 
-/* writes the BLINK constant */ 
 void SaveBlinkMode(uint16_t num) {
     BKP_WriteBackupRegister(BKP_DR9, num);
-}
+    }
 
+/* reads and writes the RESET flag */
+uint16_t GetReset(void) {
+    return BKP_ReadBackupRegister(BKP_DR10);
+    }
+
+void SaveReset(uint16_t flag) {
+    BKP_WriteBackupRegister(BKP_DR10, flag);
+    }
 
 /*+++++++++++++++++++++++++++++++++++++++++++*/ 
 /* FUNCTIONS THAT OPERATE THE SPI FLASH CHIP */
