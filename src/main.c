@@ -18,52 +18,54 @@ extern LoggerSettings  loggerSettings;
 
 int main(void) {
     flash_load();
-    // Set SYSCLK to 8 MHz
-    SetFreqLow();
+    // Reset if necessary
+    //if (GetReset() != 1) {
+    //    SaveReset(1);
+    //    SYS_Reset();
+    //    }
+    //else {
+    //    SaveReset(0);
+    //    }
     // Initialize the GPIO periphery
     MY_GPIO_Init();
     // Put TPS63001 to the normal operation mode
     TPS_PSM_HIGH();
+    // Activate RTC and Backup Domain access
+    RTC_Init();
     // Set IR LED PIN HIGH - swith it off
     LED_ON_HIGH();
     // Set DAC output to zero
     MY_SPI_Init(0);
     Set_DAC_Output(DAC_PD1, 0);
     MY_SPI_DeInit();
-    // Activate RTC and Backup Domain access
-    RTC_Init();
-    // Below cycle is just for illumination
-    for (uint32_t i = 0; i < 1000; i++) {
-        Blink_Toggle();
-        }
 
     while (1) {
+        // Verify if USB cable is attached 
         if (GPIO_ReadInputDataBit(USB_DTC_GPIO, USB_DTC_PIN)) {
-            // Put TPS63001 into the Normal Mode
+            // Put TPS63001 to the normal operation mode
             TPS_PSM_HIGH();
             // Set SYSCLK to 72 MHz
-            SetFreqHigh();            
-            
+            SetFreqHigh();                      
             // USB configuration
             Set_USBClock();
             USB_Interrupts_Config();
             USB_Init();
-
             // Task scheduler
             portBASE_TYPE err;
             err = xTaskCreate(vBlinkTask, "blink", 64, NULL,    tskIDLE_PRIORITY + 1, NULL );
             err = xTaskCreate(vChatTask,  "chat", 256, &cdc_rw, tskIDLE_PRIORITY + 1, NULL );
             err = xTaskCreate(vAlarmTask, "alarm", 64, NULL,    tskIDLE_PRIORITY + 1, NULL );
             vTaskStartScheduler();
-
             while(1);
             }
         else {
             uint32_t tm = 0;
+            // Set SYSCLK to 8 MHz
+            SetFreqLow();
             // Pull the PSM DOWN
             TPS_PSM_LOW();
-            // Switch ON the SYS_LED
-            //SYS_LED_HIGH();
+            // Blink cycle
+            for (uint32_t i = 0; i < 100; i++) {Blink_Toggle();}
             // Get the Schedule
             ReadProgramSettings();
             // GetTime
@@ -74,9 +76,9 @@ int main(void) {
                 }
             // Set the next WAKEUP time
             SetWakeUp(24);
-            // Switch OFF the SYS_LED
-            SYS_LED_LOW();
-            }
+            // Blink cycle
+            for (uint32_t i = 0; i < 5; i++) {Blink_Toggle();}
+         }
         // power off
         POWER_OFF_HIGH();
         }
