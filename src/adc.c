@@ -265,23 +265,37 @@ uint32_t ADC_ReadDataSingle(uint8_t FS) {
     return (tmp0 << 16) | (tmp1 << 8) | tmp2;
     }
 
+/* Performs Internal Zero-Scale and then Internam Full-Scale
+   calibration cycles for a given ADC GAIN setting. 
+   As far as this cycle is not available for GAIN128, 
+   this gain was depricated allover the project.
+   GAIN must be programmed before call of this function.
+   The ADC Update Rate was chosen as ADC_MR_FS_16 for accuracy
+   - pulls AD_CS LOW */
+void ADC_MakeCalibration(void) {
+    // Select the ADC
+    ADC_CS_LOW();
+    // Zero Calibration
+    MY_SPI_SendByte((ADC_WR | ADC_MODE_REG));
+    MY_SPI_SendByte(0x80);
+    MY_SPI_SendByte(ADC_MR_FS_16);
+    while (ADC_CheckStatus() & 0x80);
+    // Full-Scale Calibration
+    MY_SPI_SendByte((ADC_WR | ADC_MODE_REG));
+    MY_SPI_SendByte(0xA0);
+    MY_SPI_SendByte(ADC_MR_FS_16);
+    while (ADC_CheckStatus() & 0x80);
+    // Deselect the ADC
+    ADC_CS_HIGH();
+    }
 
 /* Continuously reads the conversion results from ADC9X ADC 
    - pulls AD_CS LOW */
 void ADC_ReadDataCont(uint32_t* data, uint16_t num, uint8_t FS) {
     uint8_t i, tmp0, tmp1, tmp2;
-    // Select the ADC: Chip Select low
+    // Select the ADC
     ADC_CS_LOW();
-    // Zero Calibration
-    //SPI_SendByte((ADC_WR | ADC_MODE_REG));
-    //SPI_SendByte(0x80);
-    //SPI_SendByte(FS);
-    //while (ADC_CheckStatus() & 0x80);
-    // Full-Scale Calibration
-    //SPI_SendByte((ADC_WR | ADC_MODE_REG));
-    //SPI_SendByte(0xA0);
-    //SPI_SendByte(FS);
-    // wait a bit
+    // Wait a bit!!!!
     while (ADC_CheckStatus() & 0x80);
     // Send the command to enable a continuous conversion mode
     tmp0 = MY_SPI_SendByte((ADC_WR | ADC_MODE_REG));
@@ -306,7 +320,7 @@ void ADC_ReadDataCont(uint32_t* data, uint16_t num, uint8_t FS) {
     tmp0 = MY_SPI_SendByte((ADC_WR | ADC_MODE_REG));
     tmp0 = MY_SPI_SendByte(0x40);
     tmp0 = MY_SPI_SendByte(FS);
-    // Deselect the ADC: Chip Select high
+    // Deselect the ADC
     ADC_CS_HIGH();
     }
 

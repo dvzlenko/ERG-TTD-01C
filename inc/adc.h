@@ -68,6 +68,7 @@ void        ADC_SetMode(uint16_t MODE);
 void        ADC_SetConfig(uint16_t CONF);
 void        ADC_ReadDataCont(uint32_t* data, uint16_t num, uint8_t FS);
 void        ADC_WriteOFF(uint32_t OFF_REG_VAL);
+void        ADC_MakeCalibration(void);
 uint8_t     ADC_SendByte(uint8_t byte);
 uint8_t     ADC_ReadID(void);
 uint8_t     ADC_ReadStatus(void);
