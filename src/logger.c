@@ -79,7 +79,7 @@ uint32_t GetTime(void) {
 
 /* sets the next wake up time and returns the value of the counter to rise the alarm 
    byte -> number of bytes per measurement */
-uint32_t SetWakeUp(uint8_t num_byte) {
+uint32_t SetWakeUp() {
     uint32_t address, num, real_alarm_time, real_operation_time, stm_operation_time, stm_alarm_time, stm_time;
     double prescaler;
     // reading of the settings
@@ -94,7 +94,7 @@ uint32_t SetWakeUp(uint8_t num_byte) {
         // RTC seems to produce the pulse at the END of the corresponding second :( So, I need to extract one second from X_stm_alarm_time
         stm_time = RTC_GetCounter();
         // calculation of the wake up time acounting for the RTC drift
-        num = (address / num_byte) + GetNumberCorrection();
+        num = (address / NUM_BYTES) + GetNumberCorrection();
         real_alarm_time = loggerSettings.start + loggerSettings.freq * num;
         real_operation_time = real_alarm_time - timeSettings.start;
         stm_operation_time = real_operation_time / prescaler; 
@@ -120,6 +120,7 @@ void MY_GPIO_Init(void) {
     // JTAG -- PA15 and PB3 pins REMAP
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
     GPIO_PinRemapConfig(GPIO_Remap_SWJ_JTAGDisable, ENABLE);
+
     // Init structure
     GPIO_InitTypeDef GPIO_InitStructure;
 
@@ -144,25 +145,25 @@ void MY_GPIO_Init(void) {
 
     // Configure SYS_LED PIN
     RCC_APB2PeriphClockCmd(SYS_LED_RCC, ENABLE);
-    GPIO_InitStructure.GPIO_Mode     = GPIO_Mode_Out_PP;
-    GPIO_InitStructure.GPIO_Speed    = GPIO_Speed_2MHz;
     GPIO_InitStructure.GPIO_Pin      = SYS_LED_PIN;
+    GPIO_InitStructure.GPIO_Speed    = GPIO_Speed_2MHz;
+    GPIO_InitStructure.GPIO_Mode     = GPIO_Mode_Out_PP;
     GPIO_Init(SYS_LED_GPIO, &GPIO_InitStructure);
     // pull it DOWN to switch SYS_LED OFF
     GPIO_ResetBits(SYS_LED_GPIO, SYS_LED_PIN);
 
     // USB_CABLE_DETECT PIN 
     RCC_APB2PeriphClockCmd(USB_DTC_RCC, ENABLE);
-    GPIO_InitStructure.GPIO_Mode     = GPIO_Mode_IPD;
-    GPIO_InitStructure.GPIO_Speed    = GPIO_Speed_2MHz;
     GPIO_InitStructure.GPIO_Pin      = USB_DTC_PIN;
+    GPIO_InitStructure.GPIO_Speed    = GPIO_Speed_2MHz;
+    GPIO_InitStructure.GPIO_Mode     = GPIO_Mode_IN_FLOATING;
     GPIO_Init(USB_DTC_GPIO, &GPIO_InitStructure);
 
     // POWER_OFF PIN
     RCC_APB2PeriphClockCmd(POWER_OFF_RCC, ENABLE);
-    GPIO_InitStructure.GPIO_Mode      = GPIO_Mode_Out_PP;
-    GPIO_InitStructure.GPIO_Speed     = GPIO_Speed_2MHz;
     GPIO_InitStructure.GPIO_Pin       = POWER_OFF_PIN;
+    GPIO_InitStructure.GPIO_Speed     = GPIO_Speed_2MHz;
+    GPIO_InitStructure.GPIO_Mode      = GPIO_Mode_Out_PP;
     GPIO_Init(POWER_OFF_GPIO, &GPIO_InitStructure);
     // pull it DOWN not to BRICK the MCU
     GPIO_ResetBits(POWER_OFF_GPIO, POWER_OFF_PIN);
@@ -327,6 +328,44 @@ void Set_DAC_Output(uint8_t mode, uint16_t value) {
 /*                                       */
 /*+++++++++++++++++++++++++++++++++++++++*/
 
+/* Determning the correct GAIN of the AD7799 ADC 
+   It works in bipolar mode!!! */
+int DetermineGain(int CHAN) {
+    float coef;
+    uint32_t COUNT;
+
+    // getting a test count from ADC
+    MY_SPI_Init(1);
+    ADC_Reset();
+    ADC_SetConfig(ADC_CR_BM | ADC_CR_Gain1 | ADC_CR_RD | ADC_CR_BUF | CHAN);
+    COUNT = ADC_ReadDataSingle(ADC_MR_FS_50);
+    MY_SPI_DeInit();
+
+    // GAIN128 does not allow Internal Full-Scale Calibration in AD7799
+    // so, it was deprecated throughout the projet
+    if (COUNT == 8388608)
+        return ADC_CR_Gain64;
+    else {
+        coef = COUNT;
+        coef = 8388608 / abs(coef - 8388608);
+        if (coef > 128)
+            return ADC_CR_Gain64;
+        else if (coef > 64)
+            return ADC_CR_Gain32;
+        else if (coef > 32)
+            return ADC_CR_Gain16;
+        else if (coef > 16)
+            return ADC_CR_Gain8;
+        else if (coef > 8)
+            return ADC_CR_Gain4;
+        else if (coef > 4)
+            return ADC_CR_Gain2;
+        else
+            return ADC_CR_Gain1;
+        }
+    }
+
+
 /* Make PRECISE measurement in BIPOLAR MODE 
    - CNAN -> ADC channel
    - GAIN -> ADC GAIN
@@ -334,7 +373,7 @@ void Set_DAC_Output(uint8_t mode, uint16_t value) {
    - FREQ -> ADC frequency
    - VREF -> reference voltage to convert ADC code in nV!!!
 */
-int MakePreciseMeasurement(int CHAN, int GAIN, int NUM, uint8_t FREQ, uint32_t VREF) {
+int MakePreciseMeasurement(int CHAN, int GAIN, int NUM, uint8_t FS, uint32_t VREF) {
     int i;
     long V;
     uint32_t DD[NUM];
@@ -344,7 +383,8 @@ int MakePreciseMeasurement(int CHAN, int GAIN, int NUM, uint8_t FREQ, uint32_t V
     MY_SPI_Init(1);
     ADC_Reset();
     ADC_SetConfig(ADC_CR_BM | GAIN | ADC_CR_RD | ADC_CR_BUF | CHAN);
-    ADC_ReadDataCont(DD, sizeof(DD) / 4, FREQ);
+    ADC_MakeCalibration();
+    ADC_ReadDataCont(DD, sizeof(DD) / 4, FS);
     MY_SPI_DeInit();
     // for virtual 1.0V of reference voltage    
     coef = (1 << (GAIN >> 8));
@@ -364,18 +404,22 @@ int MakePreciseMeasurement(int CHAN, int GAIN, int NUM, uint8_t FREQ, uint32_t V
    it seems better to measure all of the parameters together
 */
 void MakeMeasurement() { 
-    int gain, res;
+    int gain, freq, num, res;
     uint32_t address, time, VREF = 3000000000;
     char DATA[4];
+    // some settings of the measurement
+    freq = ADC_MR_FS_123;
+    num  = 64;
+
     // Get the address in the FLASH
     address = GetAddress();
 
     // strange and very bad bug... otherwise the RTC Counter does not return a proper counter value...
-    MY_SPI_Init(1);
-    ADC_CS_LOW();
-    while (ADC_CheckStatus() & 0x80);
-    ADC_CS_HIGH();
-    MY_SPI_DeInit();
+    //MY_SPI_Init(1);
+    //ADC_CS_LOW();
+    //while (ADC_CheckStatus() & 0x80);
+    //ADC_CS_HIGH();
+    //MY_SPI_DeInit();
 
     // Aquire time
     time = GetTime();
@@ -391,7 +435,8 @@ void MakeMeasurement() {
     MY_SPI_DeInit();
 
     // Aquire temperature
-    res = MakePreciseMeasurement(ADC_CR_CH2, ADC_CR_Gain16, 16, ADC_MR_FS_33, VREF);
+    gain = DetermineGain(ADC_CR_CH2); 
+    res  = MakePreciseMeasurement(ADC_CR_CH2, gain, num, freq, VREF);
     DATA[ 0] = res >> 24;
     DATA[ 1] = res >> 16;
     DATA[ 2] = res >> 8;
@@ -404,7 +449,8 @@ void MakeMeasurement() {
     MY_SPI_DeInit();
 
     // Aquire pressure
-    res = MakePreciseMeasurement(ADC_CR_CH1, ADC_CR_Gain16, 16, ADC_MR_FS_33, VREF);
+    gain = DetermineGain(ADC_CR_CH1); 
+    res  = MakePreciseMeasurement(ADC_CR_CH1, gain, num, freq, VREF);
     DATA[ 0] = res >> 24;
     DATA[ 1] = res >> 16;
     DATA[ 2] = res >> 8;
@@ -417,7 +463,8 @@ void MakeMeasurement() {
     MY_SPI_DeInit();
 
     // Aquire turbidity at 0 mA - zero current and noise lightening
-    res = MakePreciseMeasurement(ADC_CR_CH3, ADC_CR_Gain1, 32, ADC_MR_FS_62, VREF);
+    gain = DetermineGain(ADC_CR_CH3);
+    res  = MakePreciseMeasurement(ADC_CR_CH3, gain, num, freq, VREF);
     DATA[ 0] = res >> 24;
     DATA[ 1] = res >> 16;
     DATA[ 2] = res >> 8;
@@ -430,10 +477,11 @@ void MakeMeasurement() {
     MY_SPI_DeInit();
 
     // set the IR LED current to 10 mA
-    LED_ON_LOW();
     Set_DAC_Output(DAC_NM, DAC_CODE_1);
+    LED_ON_LOW();
     // Aquire turbidity at 10 mA
-    res = MakePreciseMeasurement(ADC_CR_CH3, ADC_CR_Gain1, 32, ADC_MR_FS_62, VREF);
+    gain = DetermineGain(ADC_CR_CH3);
+    res  = MakePreciseMeasurement(ADC_CR_CH3, gain, num, freq, VREF);
     DATA[ 0] = res >> 24;
     DATA[ 1] = res >> 16;
     DATA[ 2] = res >> 8;
@@ -452,10 +500,10 @@ void MakeMeasurement() {
     // switch TPS63001 to the normal mode
     TPS_PSM_HIGH();
     // set the IR LED current to 80 mA
-    LED_ON_LOW();
     Set_DAC_Output(DAC_NM, DAC_CODE_2);
     // Aquire turbidity at 80 mA
-    res = MakePreciseMeasurement(ADC_CR_CH3, ADC_CR_Gain1, 32, ADC_MR_FS_62, VREF);
+    gain = DetermineGain(ADC_CR_CH3);
+    res  = MakePreciseMeasurement(ADC_CR_CH3, gain, num, freq, VREF);
     DATA[ 0] = res >> 24;
     DATA[ 1] = res >> 16;
     DATA[ 2] = res >> 8;
@@ -474,14 +522,22 @@ void MakeMeasurement() {
     // Save the address to BKP
     SaveAddress(address);
     }
-
+    
 /*++++++++++++++++++++++++++++++++++++++*/
 /*                                      */
 /*   FUNCTIONS THAT OPERATE MCU CLOCK   */
 /*                                      */
 /*++++++++++++++++++++++++++++++++++++++*/
 
-// switches MCU to 72 MHz on the fly
+/* Resets the MCU
+   This is a HAL NVIC_SystemReset() function!!! */
+void SYS_Reset(void) {
+    SCB->AIRCR  = ((0x5FA << SCB_AIRCR_VECTKEY_Pos) | (SCB->AIRCR & SCB_AIRCR_PRIGROUP_Msk) | SCB_AIRCR_SYSRESETREQ_Msk);
+    __DSB();
+    while(1);
+    }
+
+/* switches MCU to 72 MHz on the fly */
 void SetFreqHigh(void) {
     // INCRASE THE FLASH LATTENCY
     FLASH_SetLatency(FLASH_Latency_2);
@@ -503,7 +559,7 @@ void SetFreqHigh(void) {
     usb_dp_pu();
     }
 
-// switches MCU to 8 MHz on the fly
+/* switches MCU to 8 MHz on the fly */
 void SetFreqLow(void) {
     //SET HSE AS SYSCLK SOURCE, 8MHz
     RCC_SYSCLKConfig(RCC_SYSCLKSource_HSE);
@@ -537,8 +593,8 @@ void vBlinkTask(void *vpars) {
 
 /* WakeUp move forward task */
 void vAlarmTask(void *vpars) {
-    extern LoggerSettings loggerSettings;
-    uint32_t tm, wkptm, delay, freq;
+    //extern LoggerSettings loggerSettings;
+    uint32_t tm, wkptm, delay, corr;
     // enable access to RTC
     RTC_Init();
     /// reset the operation correction number
@@ -549,14 +605,15 @@ void vAlarmTask(void *vpars) {
     if (loggerSettings.freq < 60)
         delay = 120;
     else
-        delay = freq;
-
+        delay = loggerSettings.freq;
+    // move wake up further
     while (1) {
-        tm = RTC_GetCounter();
-        wkptm = SetWakeUp(24);
-        if ((wkptm < tm + delay) & (wkptm != 0))
-            RTC_SetAlarm(wkptm + delay);
-        POWER_OFF_HIGH();
+        tm = GetTime();
+        if ((wkptm < tm + delay) & (wkptm  != 0)) {
+            corr = GetNumberCorrection();
+            SaveNumberCorrection(corr + 1); //RTC_SetAlarm(wkptm + delay);
+            }
+        wkptm = SetWakeUp();
         vTaskDelay(1000);
         }
     }
