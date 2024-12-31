@@ -42,8 +42,7 @@ char *cmd_list[CMD_LAST] = {
     
 };
 
-void vChatTask(void *vpars)
-{
+void vChatTask(void *vpars) {
     char s[64];
     char cmd[64];
     char *c;
@@ -464,89 +463,48 @@ void vChatTask(void *vpars)
             SaveBlinkMode(0);
 
         } else if (strcmp(tk, cmd_list[CMD_GetData]) == 0) {
-            uint8_t SR, NUM;
+            int GAIN, FS, NUM;
+            uint8_t SR;
             uint16_t CR, MR;
-            uint32_t VREF, Q;
+            uint32_t VREF;
             long V;
-
-            NUM  = 16;
+            // some settings
+            NUM  = 64;
+            FS   = ADC_MR_FS_470;
             VREF = 3000000000;
-            /*
-            MY_SPI_Init(1);
-            ADC_Reset();
-            ADC_SetConfig(ADC_CR_BM | ADC_CR_Gain1 | ADC_CR_RD | ADC_CR_BUF | ADC_CR_CH1);
-            Q = ADC_ReadDataSingle(ADC_MR_FS_4);
-            sniprintf(s, sizeof(s), "CH1 = 0x%06x\r\n", Q);
-            cdc_write_buf(&cdc_out, s, strlen(s), 1);
-            ADC_SetConfig(ADC_CR_BM | ADC_CR_Gain1 | ADC_CR_RD | ADC_CR_BUF | ADC_CR_CH2);
-            Q = ADC_ReadDataSingle(ADC_MR_FS_4);
-            sniprintf(s, sizeof(s), "CH2 = 0x%06x\r\n", Q);
-            cdc_write_buf(&cdc_out, s, strlen(s), 1);
-            ADC_SetConfig(ADC_CR_BM | ADC_CR_Gain1 | ADC_CR_RD | ADC_CR_BUF | ADC_CR_CH3);
-            Q = ADC_ReadDataSingle(ADC_MR_FS_4);
-            sniprintf(s, sizeof(s), "CH3 = 0x%06x\r\n", Q);
-            cdc_write_buf(&cdc_out, s, strlen(s), 1);
-
-            MR = ADC_ReadMode();
-            CR = ADC_ReadConfig();
-            SR = ADC_ReadStatus();
-            sniprintf(s, sizeof(s), "ADC:  MR - 0b%04x, CR - 0x%04x, SR - 0x%02x\r\n", MR, CR, SR);
-            cdc_write_buf(&cdc_out, s, strlen(s), 1);
-            
-           
-            int i, j;
-            uint32_t DD[NUM];
-            float coef;
-            float D1, D2;
-
-            MY_SPI_Init(1);
-            ADC_Reset();
-            ADC_SetConfig(ADC_CR_BM | ADC_CR_Gain1 | ADC_CR_RD | ADC_CR_BUF | ADC_CR_CH1);
-            ADC_ReadDataCont(DD, sizeof(DD) / 4, ADC_MR_FS_4);
-            MY_SPI_DeInit();
-            coef = 1.0;//(1 << (GAIN >> 8));
-            for (i = 0; i < sizeof(DD) / 4; i++) {
-                D1 = DD[i];
-                D2 += (VREF / 8388608.0) * (D1 - 8388608.0) / coef;
-                //sniprintf(s, sizeof(s), "D1 = %x, D2 = %d\r\n", D1, D2);
-                j = D1;
-                sniprintf(s, sizeof(s), "D1 = %x\r\n", j);
-                cdc_write_buf(&cdc_out, s, strlen(s), 1);
-                j = D2 / 1000;
-                sniprintf(s, sizeof(s), "D2 = %d\r\n", j);
-                cdc_write_buf(&cdc_out, s, strlen(s), 1);
-            }
-            // voltage as INTEGER in the NANO-volts
-            coef = NUM;
-            V = D2 / coef;
-            */
             // get temperature 
-            V = MakePreciseMeasurement(ADC_CR_CH2, ADC_CR_Gain1, NUM, ADC_MR_FS_19, VREF);
-            sniprintf(s, sizeof(s), "%d\r\n", V / 1000);
+            GAIN = DetermineGain(ADC_CR_CH2);
+            //GAIN = ADC_CR_Gain1; 
+            V = MakePreciseMeasurement(ADC_CR_CH2, GAIN, NUM, FS, VREF);
+            sniprintf(s, sizeof(s), "%d\r\n", V);
             cdc_write_buf(&cdc_out, s, strlen(s), 1);
             //get pressure
-            V = MakePreciseMeasurement(ADC_CR_CH1, ADC_CR_Gain1, NUM, ADC_MR_FS_19, VREF);
-            sniprintf(s, sizeof(s), "%d\r\n", V / 1000);
+            GAIN = DetermineGain(ADC_CR_CH1);
+            V = MakePreciseMeasurement(ADC_CR_CH1, GAIN, NUM, FS, VREF);
+            sniprintf(s, sizeof(s), "%d\r\n", V);
             cdc_write_buf(&cdc_out, s, strlen(s), 1);
             //get turbidity at A = 0ma
-            V = MakePreciseMeasurement(ADC_CR_CH3, ADC_CR_Gain1, NUM, ADC_MR_FS_19, VREF);
-            sniprintf(s, sizeof(s), "%d\r\n", V / 1000);
+            GAIN = DetermineGain(ADC_CR_CH3);
+            V = MakePreciseMeasurement(ADC_CR_CH3, GAIN, NUM, FS, VREF);
+            sniprintf(s, sizeof(s), "%d\r\n", V);
             cdc_write_buf(&cdc_out, s, strlen(s), 1);
             //get turbidity at A = 10ma
             LED_ON_LOW();
             MY_SPI_Init(0);
             Set_DAC_Output(DAC_NM, 273);
             MY_SPI_DeInit();
-            V = MakePreciseMeasurement(ADC_CR_CH3, ADC_CR_Gain1, NUM, ADC_MR_FS_19, VREF);
-            sniprintf(s, sizeof(s), "%d\r\n", V / 1000);
+            GAIN = DetermineGain(ADC_CR_CH3);
+            V = MakePreciseMeasurement(ADC_CR_CH3, GAIN, NUM, FS, VREF);
+            sniprintf(s, sizeof(s), "%d\r\n", V);
             cdc_write_buf(&cdc_out, s, strlen(s), 1);
-            //get turbidity at A = 80ma
+            //get turbidity at A = 40ma
             LED_ON_LOW();
             MY_SPI_Init(0);
-            Set_DAC_Output(DAC_NM, 2184);
+            Set_DAC_Output(DAC_NM, 1092);
             MY_SPI_DeInit();
-            V = MakePreciseMeasurement(ADC_CR_CH3, ADC_CR_Gain1, NUM, ADC_MR_FS_19, VREF);
-            sniprintf(s, sizeof(s), "%d\r\n", V / 1000);
+            GAIN = DetermineGain(ADC_CR_CH3);
+            V = MakePreciseMeasurement(ADC_CR_CH3, GAIN, NUM, FS, VREF);
+            sniprintf(s, sizeof(s), "%d\r\n", V);
             cdc_write_buf(&cdc_out, s, strlen(s), 1);
             // switch the DAC off
             LED_ON_HIGH();
@@ -558,14 +516,20 @@ void vChatTask(void *vpars)
 
         } else if (strcmp(tk, cmd_list[CMD_TestSPI]) == 0) {
             char D[16];
-            int V1, V2, V3;
+            int V1, V2, V3, NUM, FS, GAIN;
             uint8_t SR;
             uint16_t CR, MR;
             uint32_t ID, address, DD, VREF = 3000000000;
+
+            // some settings
+            NUM = 32;
+            FS  = ADC_MR_FS_50; 
+
             // ADC 
             MY_SPI_Init(1);
             ADC_Reset();
             ADC_SetConfig(ADC_CR_BM | ADC_CR_Gain1 | ADC_CR_RD | ADC_CR_BUF | ADC_CR_CH1);
+
             // read config
             ID = ADC_ReadID();
             MR = ADC_ReadMode();
@@ -576,9 +540,12 @@ void vChatTask(void *vpars)
             MY_SPI_DeInit();
 
             // measurements
-            V1 = MakePreciseMeasurement(ADC_CR_CH1, ADC_CR_Gain1, 16, ADC_MR_FS_12, VREF);
-            V2 = MakePreciseMeasurement(ADC_CR_CH2, ADC_CR_Gain1, 16, ADC_MR_FS_12, VREF);
-            V3 = MakePreciseMeasurement(ADC_CR_CH3, ADC_CR_Gain1, 16, ADC_MR_FS_12, VREF);
+            GAIN = DetermineGain(ADC_CR_CH1);
+            V1 = MakePreciseMeasurement(ADC_CR_CH1, GAIN, NUM, FS, VREF);
+            GAIN = DetermineGain(ADC_CR_CH1);
+            V2 = MakePreciseMeasurement(ADC_CR_CH2, GAIN, NUM, FS, VREF);
+            GAIN = DetermineGain(ADC_CR_CH1);
+            V3 = MakePreciseMeasurement(ADC_CR_CH3, GAIN, NUM, FS, VREF);
 
             // ADC final state
             MY_SPI_Init(1);
@@ -587,6 +554,8 @@ void vChatTask(void *vpars)
             CR = ADC_ReadConfig();
             SR = ADC_ReadStatus();
             MY_SPI_DeInit();
+
+            // write out
             sniprintf(s, sizeof(s), "ADC_TEMP: %12d\r\n", V2);
             cdc_write_buf(&cdc_out, s, strlen(s), 1);
             sniprintf(s, sizeof(s), "ADC_PRES: %12d\r\n", V1);
@@ -596,15 +565,18 @@ void vChatTask(void *vpars)
             sniprintf(s, sizeof(s), "ADC:  ID - %6x, MR - %4x, CR - %4x, SR - %4x\r\n", ID, MR, CR, SR);
             cdc_write_buf(&cdc_out, s, strlen(s), 1);
 
-            // MEMORY
+            // sFLASH test
             MY_SPI_Init(1);
             ID = MEM_ReadID();
             SR = MEM_ReadSR();
             sniprintf(s, sizeof(s), "MEM: ID - %6x; SR - %2x\r\n", ID, SR);
             cdc_write_buf(&cdc_out, s, strlen(s), 1);
             MY_SPI_DeInit();
-            //
+
+            // Full-cycle test
+            // make a proper measurement
             MakeMeasurement();
+            // read the data back from sFLASH
             address = GetAddress() - 24;
             for (int i = 0; i < 6; i++) {
                 MY_SPI_Init(1);
