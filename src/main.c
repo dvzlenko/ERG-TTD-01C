@@ -26,25 +26,19 @@ int main(void) {
     //else {
     //    SaveReset(0);
     //    }
+    // Set SYSCLK to 2MHz
+    SetFreqLow();
     // Initialize the GPIO periphery
     MY_GPIO_Init();
-    // Put TPS63001 to the normal operation mode
-    TPS_PSM_HIGH();
     // Activate RTC and Backup Domain access
     RTC_Init();
-    // Set IR LED PIN HIGH - swith it off
-    LED_ON_HIGH();
-    // Set DAC output to zero
-    MY_SPI_Init(0);
-    Set_DAC_Output(DAC_PD1, 0);
-    MY_SPI_DeInit();
 
     while (1) {
         // Verify if USB cable is attached 
         if (GPIO_ReadInputDataBit(USB_DTC_GPIO, USB_DTC_PIN)) {
             // Put TPS63001 to the normal operation mode
             TPS_PSM_HIGH();
-            // Set SYSCLK to 72 MHz
+            // Set SYSCLK to 72MHz
             SetFreqHigh();                      
             // USB configuration
             Set_USBClock();
@@ -60,10 +54,6 @@ int main(void) {
             }
         else {
             uint32_t tm = 0;
-            // Set SYSCLK to 8 MHz
-            SetFreqLow();
-            // Pull the PSM DOWN
-            TPS_PSM_LOW();
             // Blink cycle
             for (uint32_t i = 0; i < 100; i++) {Blink_Toggle();}
             // Get the Schedule
@@ -75,7 +65,7 @@ int main(void) {
                 MakeMeasurement();
                 }
             // Set the next WAKEUP time
-            SetWakeUp(24);
+            SetWakeUp(NUM_BYTES);
             // Blink cycle
             for (uint32_t i = 0; i < 5; i++) {Blink_Toggle();}
          }

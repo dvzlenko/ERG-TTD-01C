@@ -577,7 +577,7 @@ void vChatTask(void *vpars) {
             // make a proper measurement
             MakeMeasurement();
             // read the data back from sFLASH
-            address = GetAddress() - 24;
+            address = GetAddress() - NUM_BYTES;
             for (int i = 0; i < 6; i++) {
                 MY_SPI_Init(1);
                 MEM_ReadData(D, address, 4);
