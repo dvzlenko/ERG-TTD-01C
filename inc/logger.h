@@ -17,6 +17,7 @@
 #define PROG_SET_ADDR   0x0801F000  // 120-th kByte of the STM32F103 medium density devices
 #define TIME_SET_ADDR   0x0801F400  // 121-st kByte of the STM32F103 medium density devices
 #define DEV_INFO_ADDR   0x0801F800  // 122-th kByte of the STM32F103 medium density devices
+#define NUM_BYTES               24  // number of bytes per measurement
 
 // BLINK PIN
 #define SYS_LED_RCC     RCC_APB2Periph_GPIOA
@@ -138,25 +139,29 @@ typedef struct {
     } DeviceInfo;
 
 //+++++++++++++++++++++++++++++++++++++++++++++++
-void Blink_Toggle();
-void vAlarmTask(void *vpars);
 
 int         DetermineGain(int CHAN);
 int         MakePreciseMeasurement(int CHAN, int GAIN, int NUM, uint8_t FREQ, uint32_t VREF);
 void        MakeMeasurement(void);
 
-void        vBlinkTask(void *vpars);
-void        SetFreqLow(void);
-void        SetFreqHigh(void);
 void        MY_GPIO_Init(void);
 void        MY_SPI_Init(uint8_t CLK);
 void        MY_SPI_DeInit(void);
 void        Set_DAC_Output(uint8_t mode, uint16_t value);
-uint8_t     RTC_Init(void);
 uint8_t     MY_SPI_SendByte(uint8_t byte);
 uint16_t    MU_SPI_SendHalfWord(uint16_t HalfWord);
+
+uint8_t     RTC_Init(void);
 uint32_t    GetTime(void);
 uint32_t    SetWakeUp(uint8_t num_byte);
+
+void        SYS_Reset(void);
+void        SetFreqLow(void);
+void        SetFreqHigh(void);
+
+void        Blink_Toggle();
+void        vAlarmTask(void *vpars);
+void        vBlinkTask(void *vpars);
 
 #endif
 

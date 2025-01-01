@@ -66,14 +66,13 @@ uint8_t RTC_Init(void) {
 /* returns corrected time since last calibration in seconds */
 uint32_t GetTime(void) {
     uint32_t epoch, dT1, dT2;
-    double prescaler;
-
-    RTC_Init();
+    // native RTC seconds counter from MCU
     epoch = RTC_GetCounter();
+    // time settings storebd by MCU
     ReadTimeSettings();
-    prescaler = timeSettings.prescaler;
+    // convert time according to the identified clock drift
     dT1 = epoch - timeSettings.start;
-    dT2 = dT1 * prescaler;
+    dT2 = dT1 * timeSettings.prescaler;
     return timeSettings.start + dT2;
 }
 
@@ -144,28 +143,28 @@ void MY_GPIO_Init(void) {
 
     // Configure SYS_LED PIN
     RCC_APB2PeriphClockCmd(SYS_LED_RCC, ENABLE);
-    GPIO_InitStructure.GPIO_Mode     = GPIO_Mode_Out_PP;
-    GPIO_InitStructure.GPIO_Speed    = GPIO_Speed_2MHz;
     GPIO_InitStructure.GPIO_Pin      = SYS_LED_PIN;
+    GPIO_InitStructure.GPIO_Speed    = GPIO_Speed_2MHz;
+    GPIO_InitStructure.GPIO_Mode     = GPIO_Mode_Out_PP;
     GPIO_Init(SYS_LED_GPIO, &GPIO_InitStructure);
     // pull it DOWN to switch SYS_LED OFF
     GPIO_ResetBits(SYS_LED_GPIO, SYS_LED_PIN);
 
-    // USB_CABLE_DETECT PIN 
-    RCC_APB2PeriphClockCmd(USB_DTC_RCC, ENABLE);
-    GPIO_InitStructure.GPIO_Mode     = GPIO_Mode_IPD;
-    GPIO_InitStructure.GPIO_Speed    = GPIO_Speed_2MHz;
-    GPIO_InitStructure.GPIO_Pin      = USB_DTC_PIN;
-    GPIO_Init(USB_DTC_GPIO, &GPIO_InitStructure);
-
     // POWER_OFF PIN
     RCC_APB2PeriphClockCmd(POWER_OFF_RCC, ENABLE);
-    GPIO_InitStructure.GPIO_Mode      = GPIO_Mode_Out_PP;
-    GPIO_InitStructure.GPIO_Speed     = GPIO_Speed_2MHz;
     GPIO_InitStructure.GPIO_Pin       = POWER_OFF_PIN;
+    GPIO_InitStructure.GPIO_Speed     = GPIO_Speed_2MHz;
+    GPIO_InitStructure.GPIO_Mode      = GPIO_Mode_Out_PP;
     GPIO_Init(POWER_OFF_GPIO, &GPIO_InitStructure);
     // pull it DOWN not to BRICK the MCU
     GPIO_ResetBits(POWER_OFF_GPIO, POWER_OFF_PIN);
+
+    // USB_CABLE_DETECT PIN 
+    RCC_APB2PeriphClockCmd(USB_DTC_RCC, ENABLE);
+    GPIO_InitStructure.GPIO_Pin      = USB_DTC_PIN;
+    GPIO_InitStructure.GPIO_Speed    = GPIO_Speed_2MHz;
+    GPIO_InitStructure.GPIO_Mode     = GPIO_Mode_IN_FLOATING;
+    GPIO_Init(USB_DTC_GPIO, &GPIO_InitStructure);
     }
 
 /* Initializes the SPI periphery */
@@ -401,18 +400,16 @@ int MakePreciseMeasurement(int CHAN, int GAIN, int NUM, uint8_t FREQ, uint32_t V
    it seems better to measure all of the parameters together
 */
 void MakeMeasurement() { 
-    int gain, res;
+    int gain, freq, num, res;
     uint32_t address, time, VREF = 3000000000;
     char DATA[4];
+
+    // some settings of the measurement
+    freq = ADC_MR_FS_123;
+    num  = 64;
+
     // Get the address in the FLASH
     address = GetAddress();
-
-    // strange and very bad bug... otherwise the RTC Counter does not return a proper counter value...
-    MY_SPI_Init(1);
-    ADC_CS_LOW();
-    while (ADC_CheckStatus() & 0x80);
-    ADC_CS_HIGH();
-    MY_SPI_DeInit();
 
     // Aquire time
     time = GetTime();
@@ -428,7 +425,8 @@ void MakeMeasurement() {
     MY_SPI_DeInit();
 
     // Aquire temperature
-    res = MakePreciseMeasurement(ADC_CR_CH2, ADC_CR_Gain16, 16, ADC_MR_FS_33, VREF);
+    gain = DetermineGain(ADC_CR_CH2); 
+    res  = MakePreciseMeasurement(ADC_CR_CH2, gain, num, freq, VREF);
     DATA[ 0] = res >> 24;
     DATA[ 1] = res >> 16;
     DATA[ 2] = res >> 8;
@@ -441,7 +439,8 @@ void MakeMeasurement() {
     MY_SPI_DeInit();
 
     // Aquire pressure
-    res = MakePreciseMeasurement(ADC_CR_CH1, ADC_CR_Gain16, 16, ADC_MR_FS_33, VREF);
+    gain = DetermineGain(ADC_CR_CH1); 
+    res  = MakePreciseMeasurement(ADC_CR_CH1, gain, num, freq, VREF);
     DATA[ 0] = res >> 24;
     DATA[ 1] = res >> 16;
     DATA[ 2] = res >> 8;
@@ -454,7 +453,8 @@ void MakeMeasurement() {
     MY_SPI_DeInit();
 
     // Aquire turbidity at 0 mA - zero current and noise lightening
-    res = MakePreciseMeasurement(ADC_CR_CH3, ADC_CR_Gain1, 32, ADC_MR_FS_62, VREF);
+    gain = DetermineGain(ADC_CR_CH3); 
+    res  = MakePreciseMeasurement(ADC_CR_CH3, gain, num, freq, VREF);
     DATA[ 0] = res >> 24;
     DATA[ 1] = res >> 16;
     DATA[ 2] = res >> 8;
@@ -467,10 +467,11 @@ void MakeMeasurement() {
     MY_SPI_DeInit();
 
     // set the IR LED current to 10 mA
-    LED_ON_LOW();
     Set_DAC_Output(DAC_NM, DAC_CODE_1);
+    LED_ON_LOW();
     // Aquire turbidity at 10 mA
-    res = MakePreciseMeasurement(ADC_CR_CH3, ADC_CR_Gain1, 32, ADC_MR_FS_62, VREF);
+    gain = DetermineGain(ADC_CR_CH3); 
+    res  = MakePreciseMeasurement(ADC_CR_CH3, gain, num, freq, VREF);
     DATA[ 0] = res >> 24;
     DATA[ 1] = res >> 16;
     DATA[ 2] = res >> 8;
@@ -488,11 +489,11 @@ void MakeMeasurement() {
     
     // switch TPS63001 to the normal mode
     TPS_PSM_HIGH();
-    // set the IR LED current to 80 mA
-    LED_ON_LOW();
+    // set the IR LED current to 40 mA
     Set_DAC_Output(DAC_NM, DAC_CODE_2);
     // Aquire turbidity at 80 mA
-    res = MakePreciseMeasurement(ADC_CR_CH3, ADC_CR_Gain1, 32, ADC_MR_FS_62, VREF);
+    gain = DetermineGain(ADC_CR_CH3); 
+    res  = MakePreciseMeasurement(ADC_CR_CH3, gain, num, freq, VREF);
     DATA[ 0] = res >> 24;
     DATA[ 1] = res >> 16;
     DATA[ 2] = res >> 8;
@@ -508,6 +509,7 @@ void MakeMeasurement() {
         MEM_EraseSector(address);
     address += MEM_WriteData(DATA, address, sizeof(DATA));
     MY_SPI_DeInit();
+
     // Save the address to BKP
     SaveAddress(address);
     }
@@ -518,11 +520,20 @@ void MakeMeasurement() {
 /*                                      */
 /*++++++++++++++++++++++++++++++++++++++*/
 
-// switches MCU to 72 MHz on the fly
+/* Resets the MCU
+   This is a HAL NVIC_SystemReset() function!!! */
+void SYS_Reset(void) {
+    SCB->AIRCR  = ((0x5FA << SCB_AIRCR_VECTKEY_Pos) | (SCB->AIRCR & SCB_AIRCR_PRIGROUP_Msk) | SCB_AIRCR_SYSRESETREQ_Msk);
+    __DSB();
+    while(1);
+    }
+
+
+/* switches MCU to 72 MHz on the fly */
 void SetFreqHigh(void) {
     // INCRASE THE FLASH LATTENCY
     FLASH_SetLatency(FLASH_Latency_2);
-    //SET PLL SOURCE AND MULTIPLIER
+    // SET PLL SOURCE AND MULTIPLIER
     RCC_PLLConfig(RCC_PLLSource_HSE_Div1, RCC_PLLMul_9);
     // ENABLE PLL, WAIT FOR IT TO BE READY, and SET SYSCLK SOURCE AS PLLCLK
     RCC_PLLCmd(ENABLE);
@@ -540,21 +551,22 @@ void SetFreqHigh(void) {
     usb_dp_pu();
     }
 
-// switches MCU to 8 MHz on the fly
+/* switches MCU to 2MHz on the fly */
 void SetFreqLow(void) {
-    //SET HSE AS SYSCLK SOURCE, 8MHz
+    // SET HSE AS SYSCLK SOURCE, 8MHz
     RCC_SYSCLKConfig(RCC_SYSCLKSource_HSE);
-    //SET HCLK = SYSCLK / 4 = 2MHz
+    // SET HCLK = SYSCLK / 4 = 2MHz
     RCC_HCLKConfig(RCC_SYSCLK_Div4);
-    //SET PCLK1 = HCLK = 2MHZ
+    // SET PCLK1 = HCLK = 2MHZ
     RCC_PCLK1Config(RCC_HCLK_Div1);
-    //SET PCLK2 = HCLK = 2MHZ
+    // SET PCLK2 = HCLK = 2MHZ
+    // TODO Check if this calculations are valid!!! Refer to the PWM settings derived for ERG-CTD series
     RCC_PCLK2Config(RCC_HCLK_Div1);
-    //DISABLE PLL
+    // DISABLE PLL
     RCC_PLLCmd(DISABLE);
-    //DECREASE THE FLASH LATTENCY
+    // DECREASE THE FLASH LATTENCY
     FLASH_SetLatency(FLASH_Latency_0);
-    //CORE CLOCK UPDATE
+    // CORE CLOCK UPDATE
     SystemCoreClockUpdate();
     }
 
@@ -574,10 +586,7 @@ void vBlinkTask(void *vpars) {
 
 /* WakeUp move forward task */
 void vAlarmTask(void *vpars) {
-    extern LoggerSettings loggerSettings;
-    uint32_t tm, wkptm, delay, freq;
-    // enable access to RTC
-    RTC_Init();
+    uint32_t tm, wkptm, delay, corr;
     /// reset the operation correction number
     SaveNumberCorrection(0);
     // get program settings
@@ -586,13 +595,17 @@ void vAlarmTask(void *vpars) {
     if (loggerSettings.freq < 60)
         delay = 120;
     else
-        delay = freq;
+        delay = loggerSettings.freq;
 
+    
+    wkptm = SetWakeUp(NUM_BYTES);
     while (1) {
-        tm = RTC_GetCounter();
-        wkptm = SetWakeUp(24);
-        if ((wkptm < tm + delay) & (wkptm != 0))
-            RTC_SetAlarm(wkptm + delay);
+        tm = GetTime();
+        if ((wkptm < tm + delay) & (wkptm  != 0)) {
+            corr = GetNumberCorrection();
+            SaveNumberCorrection(corr + 1);
+            }
+        wkptm = SetWakeUp(NUM_BYTES);
         POWER_OFF_HIGH();
         vTaskDelay(1000);
         }
